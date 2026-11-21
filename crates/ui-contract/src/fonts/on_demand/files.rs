@@ -374,6 +374,10 @@ fn file_names(script: &str) -> &'static [&'static str] {
             "lohit-malayalam",
         ],
         "Sinh" => &["notosanssinhala", "notosanssinhalaui", "notoserifsinhala", "nirmala", "iskpota", "sinhalasangammn", "sinhalamn", "lklug"],
+        // Keyboard keys (⌘ ⌥ ⇧), check marks, stars, shapes: Apple Symbols lacks ✓, which Lucida Grande has.
+        "Zsym" => {
+            &["notosanssymbols2", "notosanssymbols", "applesymbols", "lucidagrande", "segoeuisymbol", "seguisym", "dejavusans", "freesans", "menlo"]
+        }
         _ => &[],
     }
 }
@@ -528,5 +532,18 @@ mod fontconfig {
         }
         let bytes = std::fs::read(&path).ok()?;
         sample.chars().all(|c| covering_face(&bytes, c).is_some()).then(|| path.canonicalize().unwrap_or(path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    #[test]
+    fn symbols_take_the_symbol_faces_first() {
+        let files: Vec<PathBuf> =
+            ["Inter.ttf", "Menlo.ttc", "LucidaGrande.ttc", "Apple Symbols.ttf", "seguisym.ttf"].iter().map(PathBuf::from).collect();
+        let names: Vec<_> = super::candidates("Zsym", &files).iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["Apple Symbols.ttf", "LucidaGrande.ttc", "seguisym.ttf", "Menlo.ttc"]);
     }
 }
