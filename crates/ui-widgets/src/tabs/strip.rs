@@ -209,6 +209,9 @@ pub struct StripLayout {
     min: Vec<f32>,
     width: f32,
     height: f32,
+    /// The tallest end item's height: the row never gets shorter, so the end items fit inside it (they would spill
+    /// below a row as high as its tabs, cut off where nothing is drawn under the strip, as under a hidden ribbon).
+    floor: f32,
     measured_height: bool,
     fitting: Fitting,
     shown: Vec<bool>,
@@ -220,13 +223,14 @@ pub struct StripLayout {
 }
 
 impl StripLayout {
-    fn new(count: usize, width: f32, height: f32, fitting: Fitting, report: Arc<Mutex<Report>>, ctx: egui::Context) -> Self {
+    fn new(count: usize, width: f32, height: f32, floor: f32, fitting: Fitting, report: Arc<Mutex<Report>>, ctx: egui::Context) -> Self {
         let each = if count == 0 { 0.0 } else { width / count as f32 };
         let mut layout = StripLayout {
             ideal: vec![each; count],
             min: vec![0.0; count],
             width,
-            height,
+            height: height.max(floor),
+            floor,
             measured_height: false,
             fitting,
             shown: Vec::new(),
@@ -379,14 +383,14 @@ impl ItemLayout for StripLayout {
         let tallest =
             (0..self.ideal.len()).filter_map(heights).fold(None, |most: Option<f32>, height| Some(most.map_or(height, |held| held.max(height))));
         if let Some(height) = tallest {
-            self.height = height;
+            self.height = height.max(self.floor);
             self.measured_height = true;
             self.refit();
         }
     }
 
     fn set_height(&mut self, _: usize, height: f32) {
-        self.height = if self.measured_height { self.height.max(height) } else { height };
+        self.height = if self.measured_height { self.height.max(height) } else { height.max(self.floor) };
         self.measured_height = true;
         self.refit();
     }
@@ -958,8 +962,9 @@ impl<K: Clone + Eq + Hash + Send + Sync + std::fmt::Debug + 'static> Collection 
         let (ghosts, departed) = self.reserved(cx, &keys);
         // Each end item is measured in this pass, with its label and icon only.
         let ends = self.trailing.iter().map(|end| end.fit_item(cx)).collect();
+        let floor = self.trailing.iter().map(|end| end.height(cx)).fold(0.0, f32::max);
         let fitting = Fitting { selected, mode: self.kind.fit_mode(), kept, ends, gap: cx.tokens.space.gap.inline, ghosts, departed };
-        StripLayout::new(count, width, cx.tokens.size.bar.tab, fitting, self.report.clone(), cx.frame_ctx().clone())
+        StripLayout::new(count, width, cx.tokens.size.bar.tab, floor, fitting, self.report.clone(), cx.frame_ctx().clone())
     }
 
     /// Every tab takes the strip's kind and size.

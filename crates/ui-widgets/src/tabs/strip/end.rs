@@ -99,6 +99,11 @@ impl<'a> StripEnd<'a> {
         FitItem::new(full, 0, FitKeep::Pinned).short(short)
     }
 
+    /// The item's height, as its full face measures.
+    pub(super) fn height(&self, cx: &StyleCx<'_>) -> f32 {
+        cx.face(self.full_face()).y
+    }
+
     /// Paints the item's face on `part`, icon only when the fit shortened it.
     pub(super) fn paint(&self, ui: &mut PaintUi<'_>, part: PartRef, short: bool) {
         if short {
