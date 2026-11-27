@@ -132,10 +132,14 @@ pub enum Pad {
     /// No padding.
     #[default]
     None,
+    /// `space.gap.tight`: a hairline frame around a compact group, as a small floating action bar's.
+    Tight,
     /// `space.pad.control`.
     Control,
     /// `space.pad.regular`.
     Regular,
+    /// `space.pad.dialog`: a dialog frame.
+    Dialog,
     /// `space.pad.roomy`.
     Roomy,
     /// A full-window page's margin around its content: two and a half roomy pads (40 pt in the compact set), as a
@@ -212,6 +216,8 @@ pub enum LeastWidth {
     /// Five `size.rail.width`: a page's side menu (a File page's list of pages), wide enough that its rows read as a
     /// band beside the page, not as buttons cut to their labels.
     SideMenu,
+    /// `size.dock.column`: a fixed side pane is as wide as a dock column.
+    DockColumn,
 }
 
 impl LeastWidth {
@@ -225,6 +231,7 @@ impl LeastWidth {
             LeastWidth::Rail(columns) => tokens.size.rail.width * f32::from(columns.get()),
             LeastWidth::WideDialog => tokens.size.dialog.least + tokens.size.dialog.wrap,
             LeastWidth::SideMenu => tokens.size.rail.width * 5.0,
+            LeastWidth::DockColumn => tokens.size.dock.column,
         }
     }
 }
@@ -302,6 +309,48 @@ pub enum HeaderEdge {
     End,
 }
 
+/// The room around the rule above a header ([`HeaderRegion::rule_above`]), as a `Section` has. An app sets it once at its
+/// root (`RootEnv::values`); the default is `Tight`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, crate::runtime::env::EnvValue, crate::contract::MemoProps)]
+#[env(style)]
+#[non_exhaustive]
+pub enum SectionRhythm {
+    /// The rule takes the gap its flow leaves before the container, and the header follows it at once.
+    #[default]
+    Tight,
+    /// The rule stands `space.gap.section` below what precedes it in its `Stack`, in place of the stack's gap (no room
+    /// at its flow's start), and the header `space.gap.row` below it: production VectorCraft's panel sections.
+    Spaced,
+}
+
+/// Whether a titled header that draws no rule under it (a quiet title, [`HeaderRegion::heads`]) still heads its body as
+/// a rule would. An app sets it once at its root (`RootEnv::values`); the default is `Ruled`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, crate::runtime::env::EnvValue, crate::contract::MemoProps)]
+#[env(style)]
+#[non_exhaustive]
+pub enum QuietHeader {
+    /// The body's first section draws its own rule above, as under no header.
+    #[default]
+    Ruled,
+    /// The header heads the body: its flow starts as after a rule, so the first section under the title draws no rule
+    /// above it and sections after it keep theirs. Production VectorCraft's kind line over its inspector's sections.
+    Heads,
+}
+
+/// The cursor over a header's move band ([`DragBand::Move`]). An app sets it once at its root (`RootEnv::values`); the
+/// default is `Hand`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, crate::runtime::env::EnvValue, crate::contract::MemoProps)]
+#[env(style)]
+#[non_exhaustive]
+pub enum MoveBandCursor {
+    /// The open hand, and the closed hand while the band is dragged.
+    #[default]
+    Hand,
+    /// The arrow, as an OS title bar shows, also over the click-only controls on the band (menu titles, buttons):
+    /// production VectorCraft's title bar and panel headers.
+    Arrow,
+}
+
 /// A header region, filled by `Container::header`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -313,6 +362,9 @@ pub struct HeaderRegion {
     /// Whether a rule separates the header from the body, in a band of its own between them. An inline header has no
     /// rule.
     pub rule: bool,
+    /// Whether the header is a title that heads the body as a rule would where the app asks for it
+    /// ([`QuietHeader::Heads`]), though it draws none.
+    pub heads: bool,
     /// Whether a rule runs across the container's width above the header, in a band of its own at the top edge.
     pub rule_above: bool,
     /// Whether the header shares a line with the body: the header at its measured width, the body in the rest.
@@ -332,7 +384,17 @@ pub struct HeaderRegion {
 impl HeaderRegion {
     /// A header with no drag band, no rule, on its own line, with no trailing region, no fill and no inset.
     pub const fn new() -> Self {
-        HeaderRegion { band: DragBand::None, rule: false, rule_above: false, inline: false, trailing: false, fill: None, inset: Pad::None, gap: None }
+        HeaderRegion {
+            band: DragBand::None,
+            rule: false,
+            heads: false,
+            rule_above: false,
+            inline: false,
+            trailing: false,
+            fill: None,
+            inset: Pad::None,
+            gap: None,
+        }
     }
 
     /// The surface of a band behind the header.
@@ -369,6 +431,13 @@ impl HeaderRegion {
     /// Whether a rule separates the header from the body.
     pub const fn rule(mut self, on: bool) -> Self {
         self.rule = on;
+        self
+    }
+
+    /// Whether the header is a title that heads the body as a rule would where the app asks for it
+    /// ([`QuietHeader::Heads`]), though it draws none.
+    pub const fn heads(mut self, on: bool) -> Self {
+        self.heads = on;
         self
     }
 
@@ -487,12 +556,22 @@ pub struct EndRegion {
     /// Whether a rule separates the end region from the body, in a band of its own along the region's edge that
     /// faces it.
     pub rule: bool,
+    /// Whether the region joins the body's fit: when the body's units ask for more than the line the region leaves,
+    /// the region's units that carry a `fit_rank` leave first, lowest rank first, until the body's units fit at their
+    /// ideal widths, before any body unit narrows or leaves.
+    pub fit: bool,
 }
 
 impl EndRegion {
     /// An end region as high as the line, `space.gap.tight` from the body, with no rule.
     pub const fn new() -> Self {
-        EndRegion { full_height: false, gap: Gap::Tight, rule: false }
+        EndRegion { full_height: false, gap: Gap::Tight, rule: false, fit: false }
+    }
+
+    /// Whether the region joins the body's fit.
+    pub const fn fit(mut self, on: bool) -> Self {
+        self.fit = on;
+        self
     }
 
     /// Whether a rule separates the end region from the body.
@@ -716,6 +795,18 @@ pub enum Gap {
     CardRow,
     /// `space.gap.inline`: between groups of tools in a rail.
     Inline,
+    /// `size.page.gap.title`: between a page's title and its subtitle.
+    PageTitle,
+    /// `size.page.gap.lead`: between a page's title and subtitle and the actions under them.
+    PageLead,
+    /// `size.page.gap.actions`: between a page's New and Open.
+    PageActions,
+    /// `size.page.gap.section`: between the sections of a page's column.
+    PageSection,
+    /// `size.page.gap.heading`: between a page section's heading and its body.
+    PageHeading,
+    /// `size.page.gap.link`: between a page's links.
+    PageLink,
 }
 
 /// Set by a menu for its body: a horizontal divider takes `space.gap.inline` above and below its line, since the rows
@@ -783,6 +874,8 @@ pub struct ContainerProps {
     /// The help line the footer shows under the control column of a label-scoped container; its text joins the
     /// control's description.
     pub help: Option<Label>,
+    /// The accessible name of each resize grip of a window or layer mount; its grips report no node without one.
+    pub resize_name: Option<Label>,
     /// The container's place in its set, reported on its node.
     pub position: Option<SetPosition>,
     /// The focus scope of an `Inline`, `Pane` or `FullWindow` mount.
@@ -813,6 +906,8 @@ pub struct ContainerProps {
     /// `Focus::take_reveal`). A container with a `scroll` region is one already. The body is clipped to its body
     /// region, the view, so what it shows never paints over the container's padding (a canvas's rulers).
     pub scroll_owner: bool,
+    /// A collection that receives moves the focused control in this region leaves unused.
+    pub fallback_collection: Option<egui::Id>,
     /// The container's value is a gate that disables its content while off.
     #[doc(hidden)]
     pub gates: bool,
@@ -838,6 +933,8 @@ pub struct ContainerProps {
     pub collection_body: bool,
     /// The labelled rows of the body share the widest label as one column.
     pub label_column: bool,
+    /// The rank by which a body unit of a shrinking row leaves whole; unranked units never leave by rank.
+    pub fit_rank: Option<u8>,
     /// How the labelled rows under the container show their labels; `None` keeps the scheme of the scope.
     pub labels: Option<LabelScheme>,
     /// The bracket an unwrapped `Row` placed from its start draws from its first child's labelled rows to the child
@@ -865,6 +962,7 @@ impl ContainerProps {
             && self.sizing == other.sizing
             && self.content_in_bar == other.content_in_bar
             && self.room_height == other.room_height
+            && self.fit_rank == other.fit_rank
             && self.layout == other.layout
             && self.header == other.header
             && self.scroll == other.scroll
@@ -903,6 +1001,7 @@ impl ContainerProps {
             footer: None,
             end: None,
             help: None,
+            resize_name: None,
             position: None,
             focus: FocusPolicy::NONE,
             collapse: None,
@@ -915,6 +1014,7 @@ impl ContainerProps {
             child_glyphs: None,
             arena: false,
             scroll_owner: false,
+            fallback_collection: None,
             gates: false,
             transform: None,
             theme: None,
@@ -926,6 +1026,7 @@ impl ContainerProps {
             outer_edit: false,
             collection_body: false,
             label_column: false,
+            fit_rank: None,
             labels: None,
             bracket: None,
             owner: None,
@@ -1020,6 +1121,12 @@ impl ContainerProps {
         self
     }
 
+    /// The accessible name of every resize grip of the container's window or layer.
+    pub fn resize_name(mut self, name: impl Into<Label>) -> Self {
+        self.resize_name = Some(name.into());
+        self
+    }
+
     /// The container's place in its set (`n of m`), reported on its node.
     pub const fn position(mut self, position: SetPosition) -> Self {
         self.position = Some(position);
@@ -1087,6 +1194,12 @@ impl ContainerProps {
         self
     }
 
+    /// Sets the rank by which the container leaves a shrinking row whole.
+    pub const fn fit_rank(mut self, rank: u8) -> Self {
+        self.fit_rank = Some(rank);
+        self
+    }
+
     /// Makes the container an arena root.
     pub const fn arena(mut self, on: bool) -> Self {
         self.arena = on;
@@ -1096,6 +1209,12 @@ impl ContainerProps {
     /// Makes the container its body's scroll owner with a view of its own (`ContainerProps::scroll_owner`).
     pub const fn scroll_owner(mut self, on: bool) -> Self {
         self.scroll_owner = on;
+        self
+    }
+
+    /// Sends unused moves from this region's focused control to the named collection.
+    pub fn fallback_collection(mut self, collection: egui::Id) -> Self {
+        self.fallback_collection = Some(collection);
         self
     }
 

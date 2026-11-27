@@ -11,6 +11,7 @@ rust-version = "1.95"
 repository = "https://github.com/storytold/craft-libs"
 
 [workspace.dependencies]
+craft-android-res = { path = "crates/android-res" }
 craft-audio-dsp = { path = "crates/audio-dsp" }
 craft-xfa = { path = "crates/xfa" }
 craft-evm = { path = "crates/evm" }
@@ -37,9 +38,13 @@ log = "0.4"
 craft-plist = { path = "crates/plist" }
 craft-wasm = { path = "crates/wasm" }
 craft-platform = { path = "crates/platform" }
+craft-png = { path = "crates/png" }
 craft-aep = { path = "crates/aep" }
 craft-affinity = { path = "crates/affinity" }
 craft-win32 = { path = "crates/win32" }
+craft-appkit = { path = "crates/appkit" }
+craft-wayland = { path = "crates/wayland" }
+craft-cdr = { path = "crates/cdr" }
 craft-ai = { path = "crates/ai" }
 craft-ai-core = { path = "crates/ai-core" }
 craft-anicraft-format = { path = "crates/anicraft-format" }
@@ -118,6 +123,7 @@ craft-exr = { path = "crates/exr" }
 craft-flags = { path = "crates/flags" }
 craft-font-catalog = { path = "crates/font-catalog" }
 craft-font-manager = { path = "crates/font-manager" }
+craft-font-os-windows = { path = "crates/font-os-windows" }
 craft-font-store = { path = "crates/font-store" }
 craft-gainmap = { path = "crates/gainmap" }
 craft-flow = { path = "crates/flow" }
@@ -165,6 +171,7 @@ craft-math = { path = "crates/math" }
 craft-media = { path = "crates/media", default-features = false }
 craft-media-source = { path = "crates/media-source" }
 craft-materialx = { path = "crates/materialx" }
+craft-material-graph = { path = "crates/material-graph" }
 craft-media-testkit = { path = "crates/media-testkit" }
 craft-midi = { path = "crates/midi" }
 craft-sf2 = { path = "crates/sf2" }
@@ -310,20 +317,20 @@ hayro-postscript = { path = "vendor/hayro-postscript" }
 linesweeper = { path = "vendor/linesweeper" }
 vello_common = { path = "vendor/vello_common" }
 vello_cpu = { path = "vendor/vello_cpu" }
-ecolor = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-emath = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-epaint = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-epaint_default_fonts = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui-winit = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui-wgpu = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui_glow = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui_extras = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui_kittest = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui_system_font_provider = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-eframe = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui_demo_lib = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
-egui_inspection = { git = "https://github.com/mocenigo/egui-mine.git", rev = "b7e1a3309499a90b6ccbb47382c6c7947baef4d1" }
+ecolor = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+emath = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+epaint = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+epaint_default_fonts = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui-winit = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui-wgpu = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui_glow = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui_extras = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui_kittest = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui_system_font_provider = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+eframe = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui_demo_lib = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
+egui_inspection = { git = "https://github.com/mocenigo/egui-mine.git", rev = "cd9750fab098875ed4aae0c943c06c1287b26e97" }
 winit = { git = "https://github.com/mocenigo/winit-mine.git", rev = "97ca31df6d9d033176d2564eb18aa8523795d83f" }
 
 # symphonia's FLAC decoder restores LPC samples as `residual + (prediction as i32)`. In a valid

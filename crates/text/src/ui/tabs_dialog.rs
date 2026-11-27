@@ -542,7 +542,7 @@ impl TabStopsDialog {
             }
         }
         for event in out.events {
-            if let CollectionEvent::Selection(change) = event {
+            if let CollectionEvent::Selection { change, .. } = event {
                 match change {
                     SelectionChange::Set(keys) => self.select(keys.last().copied()),
                     SelectionChange::Clear => self.select(None),
