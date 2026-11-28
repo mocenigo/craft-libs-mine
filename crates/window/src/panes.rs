@@ -54,6 +54,8 @@ struct Slot {
     place: Place,
     /// Salts the pane's ids in the window (accessibility nodes, the IME owner).
     salt: Id,
+    /// The name screen readers give the pane.
+    label: String,
     /// The pane's pixels per point at its last run.
     ppp: f32,
     /// Where the pane always takes the pointer, in pane points.
@@ -211,6 +213,7 @@ impl Pane {
                 alive: true,
                 place,
                 salt: Id::unique(("craft-window pane", name)),
+                label: String::new(),
                 ppp: 1.0,
                 strip: None,
                 origin: Pos2::ZERO,
@@ -223,6 +226,15 @@ impl Pane {
             shared.slots.len() - 1
         };
         Self { ctx, shared, index }
+    }
+
+    /// Names the pane for screen readers ("Title bar", "Status bar"), in the language the app is drawn in.
+    pub fn set_label(&self, label: &str) {
+        let mut shared = lock(&self.shared);
+        let slot = &mut shared.slots[self.index];
+        if slot.label != label {
+            label.clone_into(&mut slot.label);
+        }
     }
 
     /// The pane's own context, to give it the app's fonts, style and theme.
@@ -510,7 +522,7 @@ impl egui::plugin::Plugin for Plugin {
                     before += 1;
                     before - 1
                 });
-                slot.nodes = merge_tree(window_tree, pane_tree, slot.salt, place, at, keyboard == Owner::Pane(i));
+                slot.nodes = merge_tree(window_tree, pane_tree, (slot.salt, &slot.label), place, at, keyboard == Owner::Pane(i));
             }
         }
         if drag {
@@ -524,7 +536,7 @@ impl egui::plugin::Plugin for Plugin {
 fn merge_tree(
     window: &mut accesskit::TreeUpdate,
     pane: accesskit::TreeUpdate,
-    salt: Id,
+    (salt, label): (Id, &str),
     (origin, scale, b): (Pos2, f32, Rect),
     at: Option<usize>,
     focused: bool,
@@ -533,12 +545,12 @@ fn merge_tree(
     let Some(pane_root) = pane.tree.map(|t| t.root) else { return HashMap::new() };
     let mut back = HashMap::with_capacity(pane.nodes.len());
     for (id, mut node) in pane.nodes {
-        let children: Vec<NodeId> = node.children().iter().copied().map(map).collect();
-        node.set_children(children);
-        // shortcut: only `children` and `labelled_by` (flattened by egui) are remapped; other relations between
-        // nodes (`controls`, `active_descendant`…) still name pane ids.
+        remap_relations(&mut node, map);
         if id == pane_root {
             node.set_role(accesskit::Role::Pane);
+            if !label.is_empty() {
+                node.set_label(label);
+            }
             node.set_bounds(accesskit::Rect::new(f64::from(b.min.x), f64::from(b.min.y), f64::from(b.max.x), f64::from(b.max.y)));
             node.set_transform(accesskit::Affine::translate((f64::from(origin.x), f64::from(origin.y))) * accesskit::Affine::scale(f64::from(scale)));
         }
@@ -555,6 +567,30 @@ fn merge_tree(
         window.focus = map(pane.focus);
     }
     back
+}
+
+/// Points every relation of `node` to other nodes at the window's ids for them.
+fn remap_relations(node: &mut accesskit::Node, map: impl Fn(NodeId) -> NodeId) {
+    macro_rules! lists {
+        ($($get:ident $set:ident),*) => {$(
+            if !node.$get().is_empty() {
+                let ids: Vec<NodeId> = node.$get().iter().copied().map(&map).collect();
+                node.$set(ids);
+            }
+        )*};
+    }
+    macro_rules! single {
+        ($($get:ident $set:ident),*) => {$(
+            if let Some(id) = node.$get() {
+                node.$set(map(id));
+            }
+        )*};
+    }
+    lists!(children set_children, controls set_controls, details set_details, described_by set_described_by,
+        flow_to set_flow_to, labelled_by set_labelled_by, owns set_owns, radio_group set_radio_group);
+    single!(active_descendant set_active_descendant, error_message set_error_message,
+        in_page_link_target set_in_page_link_target, member_of set_member_of, next_on_line set_next_on_line,
+        previous_on_line set_previous_on_line, popup_for set_popup_for);
 }
 
 #[cfg(test)]
@@ -577,6 +613,7 @@ mod tests {
             ctx.enable_accesskit();
             ctx.set_zoom_factor(zoom);
             let title = Pane::new(&ctx, "title", Place::Before);
+            title.set_label("Title bar");
             let status = Pane::new(&ctx, "status", Place::After);
             Self { ctx, title, status, clicked: Vec::new() }
         }
@@ -725,5 +762,27 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(order.first(), Some(&accesskit::Role::Pane), "the title pane reads first: {order:?}");
         assert_eq!(order.last(), Some(&accesskit::Role::Pane), "the status pane reads last: {order:?}");
+    }
+
+    #[test]
+    fn a_pane_reads_with_its_name_and_its_links_name_window_nodes() {
+        let mut w = Window::new(1.0);
+        for _ in 0..3 {
+            w.frame(Vec::new());
+        }
+        let out = w.frame(Vec::new());
+        let tree = out.platform_output.accesskit_update.expect("accesskit is on");
+        let panes: Vec<Option<&str>> = tree.nodes.iter().filter(|(_, n)| n.role() == accesskit::Role::Pane).map(|(_, n)| n.label()).collect();
+        assert_eq!(panes, [Some("Title bar"), None], "the title pane is named by the app, the status pane isn't");
+
+        let mut node = accesskit::Node::new(accesskit::Role::ComboBox);
+        node.set_controls(vec![NodeId(1)]);
+        node.set_active_descendant(NodeId(2));
+        node.set_described_by(vec![NodeId(3)]);
+        remap_relations(&mut node, |n| NodeId(n.0 + 100));
+        assert_eq!(node.controls(), [NodeId(101)]);
+        assert_eq!(node.active_descendant(), Some(NodeId(102)));
+        assert_eq!(node.described_by(), [NodeId(103)]);
+        assert!(node.children().is_empty() && node.owns().is_empty(), "relations the node didn't have stay empty");
     }
 }
