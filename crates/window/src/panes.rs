@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use egui::accesskit::{self, NodeId};
 use egui::epaint::{ClippedShape, Primitive};
-use egui::{Context, Event, FullOutput, Id, Key, Modifiers, Order, Pos2, RawInput, Rect, Shape, TextureId, Ui, Vec2, ViewportId};
+use egui::{Context, Event, FullOutput, Id, Key, Modifiers, Order, Pos2, RawInput, Rect, Shape, TextureId, Ui, ViewportId};
 
 /// Which context an input goes to.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -43,6 +43,8 @@ struct Shared {
     pane_ppp: f32,
     /// Where the pane always takes the pointer, in pane points.
     strip: Option<Rect>,
+    /// The pane's top left corner, in window points.
+    origin: Pos2,
     /// Events for the pane's next run.
     events: Vec<Event>,
     hover: Owner,
@@ -68,13 +70,15 @@ struct PaneOutput {
     /// Pane points → window points: `origin + p * scale`.
     origin: Pos2,
     scale: f32,
+    /// The pane's strip on screen, in pane points: its node's bounds.
+    bounds: Rect,
 }
 
 impl Shared {
     fn to_pane(&self, ctx: &Context, pos: Pos2) -> Pos2 {
         let window_ppp = ctx.native_pixels_per_point().unwrap_or(1.0) * ctx.zoom_factor();
         let scale = self.pane_ppp / window_ppp;
-        Pos2::ZERO + (pos - ctx.viewport_rect().min) / scale
+        Pos2::ZERO + (pos - self.origin) / scale
     }
 
     /// Whether the pane takes the pointer at `pos` (pane points): its strip, or one of its areas (a popup).
@@ -119,18 +123,18 @@ impl Pane {
     }
 
     /// Runs the pane's UI for this pass of `window` at `zoom` over the window's native scale, and draws it over
-    /// the window when the pass ends. `strip` (pane points) is where the pane always takes the pointer.
-    /// Call it in every pass of the window, before anything the pane must cover is drawn.
-    pub fn show(&self, window: &Context, zoom: f32, strip: Rect, add_contents: impl FnOnce(&mut Ui)) {
+    /// the window when the pass ends. The pane's top left corner is at `origin` (window points) and it reaches the
+    /// window's bottom right corner; `strip` (pane points) is where it always takes the pointer.
+    /// Call it in every pass of the window.
+    pub fn show(&self, window: &Context, zoom: f32, origin: Pos2, strip: Rect, add_contents: impl FnOnce(&mut Ui)) {
         let native = window.native_pixels_per_point().unwrap_or(1.0);
         let window_ppp = window.pixels_per_point();
         let pane_ppp = native * zoom;
         let scale = pane_ppp / window_ppp;
-        let origin = window.viewport_rect().min;
         let mut info = window.input(|i| i.viewport().clone());
         info.native_pixels_per_point = Some(native);
         let mut raw = RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, window.viewport_rect().size() / scale)),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, (window.viewport_rect().max - origin) / scale)),
             time: window.input(|i| Some(i.time)),
             max_texture_side: window.input(|i| Some(i.max_texture_side)),
             focused: window.input(|i| i.focused),
@@ -143,6 +147,7 @@ impl Pane {
             let mut shared = lock(&self.shared);
             shared.pane_ppp = pane_ppp;
             shared.strip = Some(strip);
+            shared.origin = origin;
             events = std::mem::take(&mut shared.events);
         }
         raw.events = events;
@@ -160,7 +165,9 @@ impl Pane {
         shared.pane_tab = tab;
         let shapes = self.composite(window, &mut shared, out.textures_delta, out.shapes, out.pixels_per_point, origin, scale);
         let mut viewport_output = out.viewport_output;
-        shared.out = Some(PaneOutput { shapes, platform: out.platform_output, viewport: viewport_output.remove(&ViewportId::ROOT), origin, scale });
+        let bounds = strip.intersect(Rect::from_min_size(Pos2::ZERO, (window.viewport_rect().max - origin) / scale));
+        shared.out =
+            Some(PaneOutput { shapes, platform: out.platform_output, viewport: viewport_output.remove(&ViewportId::ROOT), origin, scale, bounds });
     }
 
     /// Hands the pane's textures to the window and turns its shapes into meshes in window points.
@@ -405,7 +412,7 @@ impl egui::plugin::Plugin for Plugin {
             root.repaint_delay = root.repaint_delay.min(viewport.repaint_delay);
         }
         if let (Some(window_tree), Some(pane_tree)) = (platform.accesskit_update.as_mut(), pane.platform.accesskit_update) {
-            shared.nodes = merge_tree(window_tree, pane_tree, salt, pane.origin.to_vec2(), pane.scale, shared.keyboard == Owner::Pane);
+            shared.nodes = merge_tree(window_tree, pane_tree, salt, (pane.origin, pane.scale, pane.bounds), shared.keyboard == Owner::Pane);
         }
     }
 }
@@ -415,10 +422,10 @@ fn merge_tree(
     window: &mut accesskit::TreeUpdate,
     pane: accesskit::TreeUpdate,
     salt: Id,
-    origin: Vec2,
-    scale: f32,
+    place: (Pos2, f32, Rect),
     focused: bool,
 ) -> HashMap<NodeId, NodeId> {
+    let (origin, scale, b) = place;
     let map = |n: NodeId| NodeId(salt.with(n.0).value());
     let Some(pane_root) = pane.tree.map(|t| t.root) else { return HashMap::new() };
     let mut back = HashMap::with_capacity(pane.nodes.len());
@@ -429,6 +436,7 @@ fn merge_tree(
         // nodes (`controls`, `active_descendant`…) still name pane ids.
         if id == pane_root {
             node.set_role(accesskit::Role::Pane);
+            node.set_bounds(accesskit::Rect::new(f64::from(b.min.x), f64::from(b.min.y), f64::from(b.max.x), f64::from(b.max.y)));
             node.set_transform(accesskit::Affine::translate((f64::from(origin.x), f64::from(origin.y))) * accesskit::Affine::scale(f64::from(scale)));
         }
         back.insert(map(id), id);
@@ -449,6 +457,7 @@ fn merge_tree(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::Vec2;
 
     /// A window at `zoom` with a pane at zoom 1 whose strip holds a "Bar" button, and a "Page" button under it.
     struct Window {
@@ -475,7 +484,7 @@ mod tests {
             let (pane, clicked) = (&self.pane, &mut self.clicked);
             let mut out = self.ctx.run_ui(raw, |ui| {
                 let strip = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 40.0));
-                pane.show(ui.ctx(), 1.0, strip, |ui| {
+                pane.show(ui.ctx(), 1.0, ui.max_rect().min, strip, |ui| {
                     if ui.button("Bar").clicked() {
                         clicked.push("Bar");
                     }
@@ -562,5 +571,22 @@ mod tests {
             assert_eq!(w.clicked, ["Bar", "Page"], "each click lands in its own context at zoom {zoom}");
         }
         assert!(sizes.iter().all(|s| (*s - sizes[0]).length() < 0.5 && s.x > 0.0), "the pane draws at the same pixel size: {sizes:?}");
+    }
+    #[test]
+    fn tab_moves_focus_from_the_window_into_the_pane_and_back() {
+        let mut w = Window::new(2.0);
+        for _ in 0..3 {
+            w.frame(Vec::new());
+        }
+        let tab = || Event::Key { key: Key::Tab, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
+        let mut focused = Vec::new();
+        for _ in 0..3 {
+            w.frame(vec![tab()]);
+            let out = w.frame(Vec::new());
+            let tree = out.platform_output.accesskit_update.expect("accesskit is on");
+            let label = tree.nodes.iter().find(|(id, _)| *id == tree.focus).and_then(|(_, n)| n.label().map(str::to_owned));
+            focused.push(label.unwrap_or_default());
+        }
+        assert_eq!(focused, ["Page", "Bar", "Page"], "Tab goes round both contexts");
     }
 }
