@@ -239,3 +239,38 @@ pub fn set_opacity(title: &str, opacity: f32) -> bool {
         false
     }
 }
+
+/// Gives the AppKit windows titled `title` an empty unified toolbar, as a Finder window has: AppKit then makes the
+/// title bar as tall as the toolbar and centres the traffic lights in it, with a matching left inset, and keeps
+/// them there through resizing, full screen and appearance changes. An app-drawn bar under a transparent title bar
+/// takes its height (twice `centre_from_top`) and its leading room from [`measure`]. Like [`set_opacity`] it finds
+/// the window by title. Returns whether a window titled `title` has the toolbar. Does nothing off macOS.
+pub fn set_unified_toolbar(title: &str) -> bool {
+    #[cfg(all(feature = "appkit", target_os = "macos"))]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::{NSApplication, NSTitlebarSeparatorStyle, NSToolbar, NSWindowToolbarStyle};
+        use objc2_foundation::NSString;
+
+        let Some(mtm) = MainThreadMarker::new() else { return false };
+        let title = NSString::from_str(title);
+        let mut found = false;
+        for window in NSApplication::sharedApplication(mtm).windows().iter() {
+            if window.title().isEqualToString(&title) {
+                found = true;
+                if window.toolbar().is_none() {
+                    window.setToolbar(Some(&NSToolbar::new(mtm)));
+                    window.setToolbarStyle(NSWindowToolbarStyle::Unified);
+                    // The app's bar draws its own separator.
+                    window.setTitlebarSeparatorStyle(NSTitlebarSeparatorStyle::None);
+                }
+            }
+        }
+        found
+    }
+    #[cfg(not(all(feature = "appkit", target_os = "macos")))]
+    {
+        let _ = title;
+        false
+    }
+}
