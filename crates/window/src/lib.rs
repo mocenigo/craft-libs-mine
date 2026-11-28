@@ -67,6 +67,8 @@ pub mod mac;
 mod menu;
 pub mod native;
 pub mod native_menu;
+#[cfg(feature = "ui")]
+pub mod panes;
 pub mod policy;
 pub mod system;
 #[cfg(windows)]
